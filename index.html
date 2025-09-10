@@ -8,13 +8,13 @@
     :root { --bg:#0b0d10; --panel:#141821; --text:#e7ebf0; --muted:#8fa0b3; --brand:#4da3ff; --ok:#22c55e; --warn:#f59e0b; }
     *{box-sizing:border-box}
     html,body{height:100%}
-    body{margin:0;font:14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Inter, "Helvetica Neue", Arial, sans-serif;background:linear-gradient(180deg,#0b0d10,#0a0c0f 40%,#0b0d10);color:var(--text)}
+    body{margin:0;font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Inter,"Helvetica Neue",Arial,sans-serif;background:linear-gradient(180deg,#0b0d10,#0a0c0f 40%,#0b0d10);color:var(--text)}
     .container{max-width:1100px;margin:32px auto;padding:0 16px}
     header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
     h1{font-size:22px;margin:0;letter-spacing:.2px}
     .tag{padding:4px 8px;border-radius:999px;background:rgba(77,163,255,.12);color:#cfe5ff;border:1px solid rgba(77,163,255,.25)}
     .grid{display:grid;grid-template-columns:1.2fr .8fr;gap:18px}
-    .card{background:linear-gradient(180deg,rgba(255,255,255,.02),rgba(255,255,255,.01));border:1px solid rgba(255,255,255,.08);backdrop-filter: blur(8px);border-radius:14px;box-shadow:0 8px 28px rgba(0,0,0,.25)}
+    .card{background:linear-gradient(180deg,rgba(255,255,255,.02),rgba(255,255,255,.01));border:1px solid rgba(255,255,255,.08);backdrop-filter:blur(8px);border-radius:14px;box-shadow:0 8px 28px rgba(0,0,0,.25)}
     .card h2{margin:0 0 10px 0;font-size:15px;color:#d6dbe3}
     .card .body{padding:14px}
     .drop{border:1.5px dashed rgba(255,255,255,.18);border-radius:12px;padding:18px;text-align:center;cursor:pointer;background:rgba(255,255,255,.02)}
@@ -156,6 +156,8 @@
     const countLabel = document.getElementById('countLabel');
     const clearBtn = document.getElementById('clearBtn');
 
+    const MAX_FILES = 100; // set your cap here
+
     let queue = []; // {file, name, url}
     let results = []; // {name, blob, url, size}
 
@@ -186,7 +188,13 @@
     function handleFiles(fileList){
       const arr = Array.from(fileList);
       const accepted = arr.filter(f=> SUPPORTED_IN.includes(f.type) || /\.(svg|heic|heif)$/i.test(f.name));
-      if (accepted.length===0){ setStatus('No supported images found'); return; }
+      if (!accepted.length){ setStatus('No supported images found'); return; }
+
+      if (queue.length + accepted.length > MAX_FILES){
+        setStatus(`Limit is ${MAX_FILES} files. Some files were ignored.`);
+        accepted.splice(MAX_FILES - queue.length);
+      }
+
       accepted.forEach((file)=>{
         const url = URL.createObjectURL(file);
         const item = { file, name: file.name.replace(/\.[^.]+$/,''), url };
@@ -219,7 +227,6 @@
     }
 
     async function decodeToBitmap(file){
-      // Try native first
       try {
         return await createImageBitmap(file);
       } catch(err) {
