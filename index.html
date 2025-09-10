@@ -53,48 +53,309 @@
       <div class="pill" id="countLabel">0 files</div>
     </header>
 
-    <!-- same UI structure as before -->
+    <div class="grid">
+      <section class="card">
+        <div class="body">
+          <h2>1) Add images</h2>
+          <div id="drop" class="drop">
+            <input id="file" type="file" accept="image/*,.svg,.heic,.heif" multiple hidden>
+            <p style="margin:6px 0 2px 0">Drag & drop images here</p>
+            <p class="muted" style="margin:0">or <u>click to browse</u></p>
+          </div>
+          <div class="actions">
+            <button class="ghost" id="clearBtn">Clear</button>
+          </div>
+
+          <div id="files" class="files" aria-live="polite"></div>
+        </div>
+      </section>
+
+      <aside class="card">
+        <div class="body">
+          <h2>2) Convert options</h2>
+          <div class="row">
+            <div>
+              <label for="format">Output format</label>
+              <select id="format">
+                <option value="image/png">PNG (.png)</option>
+                <option value="image/jpeg">JPEG (.jpg)</option>
+                <option value="image/webp" selected>WebP (.webp)</option>
+              </select>
+            </div>
+            <div>
+              <label for="quality">Quality (JPEG/WebP)</label>
+              <input id="quality" type="range" min="40" max="100" value="90">
+              <div class="help"><span id="qualityVal">90</span>%</div>
+            </div>
+          </div>
+
+          <div class="row" style="margin-top:10px">
+            <div>
+              <label for="maxW">Max width (px)</label>
+              <input id="maxW" type="number" min="0" placeholder="0 = original" value="0">
+            </div>
+            <div>
+              <label for="maxH">Max height (px)</label>
+              <input id="maxH" type="number" min="0" placeholder="0 = original" value="0">
+            </div>
+          </div>
+
+          <div class="row" style="margin-top:10px">
+            <div>
+              <label for="bg">Background for JPEG (hex)</label>
+              <input id="bg" type="text" placeholder="#ffffff" value="#ffffff">
+              <div class="help">Used when source has transparency</div>
+            </div>
+            <div>
+              <label for="pattern">Filename pattern</label>
+              <input id="pattern" type="text" value="{name}-{index}" />
+              <div class="help">Tokens: {name} {index} {ext}</div>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button id="convertBtn" class="primary">Convert</button>
+            <button id="downloadAllBtn" class="good">Download all</button>
+            <button id="saveToFolderBtn" title="Chromium browsers" class="ghost">Save to folder</button>
+          </div>
+
+          <div class="footer">
+            <div style="flex:1;margin-right:10px">
+              <div class="progress" aria-hidden="true"><div id="bar" class="bar"></div></div>
+            </div>
+            <div id="status" class="muted">Idle</div>
+          </div>
+
+          <h2 style="margin-top:14px">3) Output</h2>
+          <div id="output" class="files"></div>
+        </div>
+      </aside>
+    </div>
   </div>
 
-<script>
-(function(){
-  const SUPPORTED_IN = ['image/png','image/jpeg','image/webp','image/gif','image/bmp','image/svg+xml','image/heic','image/heif'];
-  const EXT_MAP = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp':'webp' };
+  <!-- HEIC decoder (wasm) via heic2any -->
+  <script src="https://unpkg.com/heic2any/dist/heic2any.min.js"></script>
+  <script>
+  (function(){
+    const drop = document.getElementById('drop');
+    const fileInput = document.getElementById('file');
+    const filesEl = document.getElementById('files');
+    const outEl = document.getElementById('output');
+    const convertBtn = document.getElementById('convertBtn');
+    const downloadAllBtn = document.getElementById('downloadAllBtn');
+    const saveToFolderBtn = document.getElementById('saveToFolderBtn');
+    const formatSel = document.getElementById('format');
+    const qRange = document.getElementById('quality');
+    const qVal = document.getElementById('qualityVal');
+    const maxW = document.getElementById('maxW');
+    const maxH = document.getElementById('maxH');
+    const bg = document.getElementById('bg');
+    const patt = document.getElementById('pattern');
+    const bar = document.getElementById('bar');
+    const status = document.getElementById('status');
+    const countLabel = document.getElementById('countLabel');
+    const clearBtn = document.getElementById('clearBtn');
 
-  // ... rest of variables as before
+    let queue = []; // {file, name, url}
+    let results = []; // {name, blob, url, size}
 
-  async function decodeToBitmap(file){
-    if (file.type==='image/heic' || file.type==='image/heif' || file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif')){
+    const SUPPORTED_IN = ['image/png','image/jpeg','image/webp','image/gif','image/bmp','image/svg+xml','image/heic','image/heif'];
+    const EXT_MAP = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp':'webp' };
+
+    qRange.addEventListener('input', ()=> qVal.textContent = qRange.value);
+
+    // Drag & drop
+    drop.addEventListener('click', ()=> fileInput.click());
+    ['dragenter','dragover'].forEach(ev=> drop.addEventListener(ev, e=>{e.preventDefault();drop.classList.add('drag');}));
+    ;['dragleave','drop'].forEach(ev=> drop.addEventListener(ev, e=>{e.preventDefault();drop.classList.remove('drag');}));
+    drop.addEventListener('drop', e=> handleFiles(e.dataTransfer.files));
+    fileInput.addEventListener('change', e=> handleFiles(e.target.files));
+
+    clearBtn.addEventListener('click', ()=>{ queue=[]; results=[]; filesEl.innerHTML=''; outEl.innerHTML=''; updateCount(); setStatus('Cleared'); setBar(0); });
+
+    function updateCount(){ countLabel.textContent = `${queue.length} files`; }
+
+    function setBar(p){ bar.style.width = `${p}%`; }
+    function setStatus(t){ status.textContent = t; }
+
+    function isHeic(file){
+      const n = file.name.toLowerCase();
+      return file.type==='image/heic' || file.type==='image/heif' || n.endsWith('.heic') || n.endsWith('.heif');
+    }
+
+    function handleFiles(fileList){
+      const arr = Array.from(fileList);
+      const accepted = arr.filter(f=> SUPPORTED_IN.includes(f.type) || /\.(svg|heic|heif)$/i.test(f.name));
+      if (accepted.length===0){ setStatus('No supported images found'); return; }
+      accepted.forEach((file)=>{
+        const url = URL.createObjectURL(file);
+        const item = { file, name: file.name.replace(/\.[^.]+$/,''), url };
+        queue.push(item);
+        renderThumb(item);
+      });
+      updateCount();
+      setStatus(`Added ${accepted.length} file(s)`);
+    }
+
+    function renderThumb(item){
+      const div = document.createElement('div');
+      div.className='thumb';
+      const img = new Image();
+      img.loading='lazy';
+      img.src=item.url; img.alt=item.name;
+      const meta = document.createElement('div');
+      meta.className='meta';
+      const ext = (item.file.type.split('/')[1]||item.file.name.split('.').pop()||'svg');
+      meta.innerHTML = `<span class="chip">.${ext}</span><span class="muted">${prettyBytes(item.file.size)}</span>`;
+      div.appendChild(img); div.appendChild(meta);
+      filesEl.appendChild(div);
+    }
+
+    async function heicToBitmap(file){
+      if (!window.heic2any) throw new Error('HEIC decoder not loaded');
+      let out = await window.heic2any({ blob: file, toType: 'image/png' });
+      if (Array.isArray(out)) out = out[0];
+      return await createImageBitmap(out);
+    }
+
+    async function decodeToBitmap(file){
+      // Try native first
       try {
-        const arrayBuffer = await file.arrayBuffer();
-        // Try native support first
-        return await createImageBitmap(new Blob([arrayBuffer], {type: file.type || 'image/heic'}));
-      } catch(err){
-        alert('HEIC/HEIF decoding is not supported by this browser. Please use Safari/iOS or convert with a different tool.');
-        throw err;
+        return await createImageBitmap(file);
+      } catch(err) {
+        if (isHeic(file)){
+          try { return await heicToBitmap(file); }
+          catch(e){ setStatus('HEIC decode failed in this browser'); throw e; }
+        }
+        const url = URL.createObjectURL(file);
+        try{ const img = await loadImage(url); return imgToBitmap(img); }
+        finally{ URL.revokeObjectURL(url); }
       }
     }
-    try { return await createImageBitmap(file); }
-    catch(err){
-      const url = URL.createObjectURL(file);
-      try{ const img = await loadImage(url); return imgToBitmap(img); }
-      finally{ URL.revokeObjectURL(url); }
+
+    function loadImage(url){
+      return new Promise((res,rej)=>{ const img = new Image(); img.onload=()=>res(img); img.onerror=rej; img.src=url; });
     }
-  }
+    function imgToBitmap(img){
+      const cvs=document.createElement('canvas');
+      cvs.width=img.naturalWidth||img.width; cvs.height=img.naturalHeight||img.height;
+      const ctx=cvs.getContext('2d');
+      ctx.drawImage(img,0,0);
+      return createImageBitmap(cvs);
+    }
 
-  function loadImage(url){
-    return new Promise((res,rej)=>{ const img = new Image(); img.onload=()=>res(img); img.onerror=rej; img.src=url; });
-  }
-  function imgToBitmap(img){
-    const cvs=document.createElement('canvas');
-    cvs.width=img.naturalWidth||img.width; cvs.height=img.naturalHeight||img.height;
-    const ctx=cvs.getContext('2d');
-    ctx.drawImage(img,0,0);
-    return createImageBitmap(cvs);
-  }
+    function computeSize(w,h){
+      const W = parseInt(maxW.value||0,10); const H = parseInt(maxH.value||0,10);
+      if (!W && !H) return {w,h};
+      const ratio = w/h;
+      let nw=w, nh=h;
+      if (W && H){
+        const rw = W/w, rh = H/h; const s = Math.min(rw,rh);
+        nw = Math.floor(w*s); nh = Math.floor(h*s);
+      } else if (W){ nw = Math.min(W,w); nh = Math.floor(nw/ratio); }
+      else if (H){ nh = Math.min(H,h); nw = Math.floor(nh*ratio); }
+      return {w:nw, h:nh};
+    }
 
-  // rest of code unchanged from previous version
-})();
-</script>
+    function parseHexColor(hex){
+      const m = /^#?([\da-f]{6}|[\da-f]{3})$/i.exec(hex.trim());
+      if (!m) return null;
+      let h = m[1]; if (h.length===3) h = h.split('').map(c=>c+c).join('');
+      const num = parseInt(h,16); return { r:(num>>16)&255, g:(num>>8)&255, b:num&255 };
+    }
+
+    async function convertAll(){
+      if (!queue.length){ setStatus('Add images first'); return; }
+      results = []; outEl.innerHTML=''; setBar(0);
+      const outType = formatSel.value; const quality = Number(qRange.value)/100;
+      const bgColor = parseHexColor(bg.value) || {r:255,g:255,b:255};
+      setStatus('Converting...');
+
+      for (let i=0;i<queue.length;i++){
+        const item = queue[i];
+        try{
+          const bmp = await decodeToBitmap(item.file);
+          let {width:w, height:h} = bmp; const {w:nw, h:nh} = computeSize(w,h);
+          const cvs = new OffscreenCanvas(nw, nh);
+          const ctx = cvs.getContext('2d', {desynchronized:true});
+          if (outType==='image/jpeg'){
+            ctx.fillStyle = `rgb(${bgColor.r},${bgColor.g},${bgColor.b})`; ctx.fillRect(0,0,nw,nh);
+          }
+          ctx.drawImage(bmp, 0,0,nw,nh);
+          const blob = await cvs.convertToBlob({ type: outType, quality: (outType==='image/png')?undefined:quality });
+          const ext = EXT_MAP[outType] || 'bin';
+          const name = (patt.value||'{name}-{index}')
+            .replaceAll('{name}', sanitizeBase(item.name))
+            .replaceAll('{index}', String(i+1).padStart(2,'0'))
+            .replaceAll('{ext}', ext) + `.${ext}`;
+          const url = URL.createObjectURL(blob);
+          const res = { name, blob, url, size: blob.size };
+          results.push(res);
+          renderOutput(res);
+        }catch(err){ console.error(err); setStatus('Some files failed'); }
+        setBar(Math.round(((i+1)/queue.length)*100));
+      }
+      setStatus(`Done • ${results.length} file(s)`);
+    }
+
+    function sanitizeBase(s){ return s.replace(/[^a-z0-9\-_]+/gi,'-').replace(/(^-|-$)/g,'').toLowerCase(); }
+
+    function renderOutput(res){
+      const div = document.createElement('div'); div.className='thumb';
+      const img = new Image(); img.src = res.url; img.alt = res.name; img.loading='lazy';
+      const meta = document.createElement('div'); meta.className='meta';
+      const right = document.createElement('div');
+      const dl = document.createElement('button'); dl.textContent='Download'; dl.onclick=()=>downloadBlob(res.blob, res.name);
+      dl.className='ghost'; right.appendChild(dl);
+      meta.innerHTML = `<span class="chip">${res.name.split('.').pop().toUpperCase()}</span><span class="muted">${prettyBytes(res.size)}</span>`;
+      meta.appendChild(right);
+      div.appendChild(img); div.appendChild(meta);
+      outEl.appendChild(div);
+    }
+
+    function prettyBytes(bytes){
+      const units=['B','KB','MB','GB']; let i=0; let num=bytes;
+      while(num>=1024 && i<units.length-1){ num/=1024; i++; }
+      return `${num.toFixed(num<10&&i>0?2:1)} ${units[i]}`;
+    }
+
+    async function downloadAll(){
+      if (!results.length){ setStatus('Nothing to download'); return; }
+      setStatus('Downloading all...');
+      for (let i=0;i<results.length;i++){
+        downloadBlob(results[i].blob, results[i].name);
+        await sleep(120);
+      }
+      setStatus('Downloads triggered');
+    }
+
+    async function saveToFolder(){
+      if (!results.length){ setStatus('Nothing to save'); return; }
+      if (!window.showDirectoryPicker){ setStatus('Folder save not supported'); return; }
+      try{
+        const dir = await window.showDirectoryPicker({ mode:'readwrite' });
+        for (let i=0;i<results.length;i++){
+          const fileHandle = await dir.getFileHandle(results[i].name, { create:true });
+          const w = await fileHandle.createWritable();
+          await w.write(results[i].blob); await w.close();
+          setBar(Math.round(((i+1)/results.length)*100));
+        }
+        setStatus('Saved to folder');
+      }catch(e){ setStatus('Save cancelled'); }
+    }
+
+    function downloadBlob(blob, name){
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=> URL.revokeObjectURL(a.href), 3000);
+    }
+
+    const sleep = (ms)=> new Promise(r=> setTimeout(r,ms));
+
+    convertBtn.addEventListener('click', convertAll);
+    downloadAllBtn.addEventListener('click', downloadAll);
+    saveToFolderBtn.addEventListener('click', saveToFolder);
+  })();
+  </script>
 </body>
 </html>
