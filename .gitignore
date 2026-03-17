@@ -1,2 +1,5 @@
 upwork-mcp/.env
 upwork-mcp/node_modules/
+upwork-agent/.env
+upwork-agent/node_modules/
+upwork-agent/runs/

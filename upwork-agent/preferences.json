@@ -1,0 +1,49 @@
+{
+  "_comment": "Edit this file to match your skills, rates, and job preferences.",
+
+  "profile": {
+    "title": "Full Stack Developer",
+    "skills": ["JavaScript", "TypeScript", "React", "Node.js", "Python"],
+    "hourly_rate_usd": 75,
+    "bio_summary": "Experienced full stack developer specializing in React and Node.js. 5+ years building web applications. Strong focus on clean code and fast delivery.",
+    "portfolio_highlights": [
+      "Built a SaaS dashboard for 10k+ users",
+      "Migrated legacy PHP app to React/Node.js",
+      "API integrations: Stripe, Twilio, SendGrid"
+    ]
+  },
+
+  "job_search": {
+    "queries": [
+      "React developer",
+      "Node.js developer",
+      "Full stack JavaScript"
+    ],
+    "categories": ["Web Development", "JavaScript"],
+    "job_types": ["hourly", "fixed"],
+    "budget_min_usd": 500,
+    "hourly_rate_min_usd": 30,
+    "results_per_query": 15,
+    "sort": "recency"
+  },
+
+  "scoring": {
+    "auto_apply_threshold": 7,
+    "max_proposals_per_run": 3,
+    "skip_if_no_payment_verified": true,
+    "preferred_client_rating_min": 4.0,
+    "avoid_keywords": ["urgent", "asap", "cheap", "looking for cheapest"]
+  },
+
+  "cover_letter": {
+    "tone": "professional and friendly",
+    "max_length_words": 200,
+    "always_mention_turnaround": true,
+    "custom_instructions": "Always start with a brief line about why I'm excited about this specific project. End with a call to action."
+  },
+
+  "catalog_projects": {
+    "auto_create": false,
+    "templates": []
+  }
+}
