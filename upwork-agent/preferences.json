@@ -1,29 +1,56 @@
 {
-  "_comment": "Edit this file to match your skills, rates, and job preferences.",
+  "_comment": "Your Upwork profile and job preferences. Edit everything in 'profile' to match your real profile.",
 
   "profile": {
-    "title": "Full Stack Developer",
-    "skills": ["JavaScript", "TypeScript", "React", "Node.js", "Python"],
-    "hourly_rate_usd": 75,
-    "bio_summary": "Experienced full stack developer specializing in React and Node.js. 5+ years building web applications. Strong focus on clean code and fast delivery.",
+    "title": "Executive Assistant & Brand Consultant | Web & Design | French Speaker",
+    "skills": [
+      "Executive Assistance",
+      "Virtual Assistant",
+      "Brand Strategy",
+      "Brand Consulting",
+      "French Translation",
+      "French Language Services",
+      "Web Development",
+      "UI/UX Design",
+      "Graphic Design",
+      "Project Management",
+      "Social Media Management",
+      "Content Writing",
+      "Administrative Support"
+    ],
+    "hourly_rate_usd": 45,
+    "bio_summary": "Versatile professional offering executive assistance, brand consulting, and French language services alongside web development and design. Fluent French speaker with strong experience supporting high-profile executives. I bring strategic thinking, attention to detail, and fast turnaround to every project.",
     "portfolio_highlights": [
-      "Built a SaaS dashboard for 10k+ users",
-      "Migrated legacy PHP app to React/Node.js",
-      "API integrations: Stripe, Twilio, SendGrid"
-    ]
+      "Executive assistant to C-suite for 3+ years",
+      "Developed brand identity for multiple businesses",
+      "French translation and localization projects",
+      "Web development and design for SMBs"
+    ],
+    "languages": ["English", "French"]
   },
 
   "job_search": {
     "queries": [
-      "React developer",
-      "Node.js developer",
-      "Full stack JavaScript"
+      "executive assistant",
+      "virtual assistant French",
+      "brand consultant",
+      "French translator",
+      "French virtual assistant",
+      "web developer designer",
+      "brand strategy consultant",
+      "administrative assistant"
     ],
-    "categories": ["Web Development", "JavaScript"],
+    "categories": [
+      "Admin Support",
+      "Writing & Translation",
+      "Sales & Marketing",
+      "Web Development",
+      "Design & Creative"
+    ],
     "job_types": ["hourly", "fixed"],
-    "budget_min_usd": 500,
-    "hourly_rate_min_usd": 30,
-    "results_per_query": 15,
+    "budget_min_usd": 200,
+    "hourly_rate_min_usd": 20,
+    "results_per_query": 10,
     "sort": "recency"
   },
 
@@ -32,18 +59,30 @@
     "max_proposals_per_run": 3,
     "skip_if_no_payment_verified": true,
     "preferred_client_rating_min": 4.0,
-    "avoid_keywords": ["urgent", "asap", "cheap", "looking for cheapest"]
+    "avoid_keywords": ["urgent only", "need cheapest", "very low budget", "unpaid", "intern"],
+    "boost_keywords": ["French", "bilingual", "executive", "brand", "C-suite", "startup"]
   },
 
   "cover_letter": {
-    "tone": "professional and friendly",
+    "tone": "warm, professional, and confident",
     "max_length_words": 200,
     "always_mention_turnaround": true,
-    "custom_instructions": "Always start with a brief line about why I'm excited about this specific project. End with a call to action."
+    "custom_instructions": "Open with one sentence showing you actually read the job post. Highlight the most relevant skill (French/EA/brand/web — pick the most fitting). Mention availability and response time. Close with a warm invitation to chat. Never use generic openers like 'I am writing to apply'."
   },
 
   "catalog_projects": {
     "auto_create": false,
-    "templates": []
+    "templates": [
+      {
+        "title": "Executive Assistance Package (20 hrs)",
+        "category": "Admin Support",
+        "description": "Full executive support: calendar management, email, travel, research, and reporting for busy executives."
+      },
+      {
+        "title": "Brand Identity Starter Kit",
+        "category": "Design & Creative",
+        "description": "Logo, color palette, typography, and brand guidelines for startups and SMBs."
+      }
+    ]
   }
 }
