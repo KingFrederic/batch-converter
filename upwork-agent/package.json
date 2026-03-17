@@ -1,7 +1,7 @@
 {
   "name": "upwork-agent",
   "version": "1.0.0",
-  "description": "Autonomous Claude agent that manages your Upwork account",
+  "description": "Autonomous Groq/Llama agent that manages your Upwork account",
   "type": "module",
   "main": "src/index.js",
   "scripts": {
@@ -11,9 +11,9 @@
     "schedule": "node src/index.js --schedule"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.36.0",
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "node-cron": "^3.0.3"
+    "node-cron": "^3.0.3",
+    "openai": "^6.32.0"
   },
   "engines": {
     "node": ">=18"

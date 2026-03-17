@@ -3,13 +3,13 @@
  *
  * Flow:
  *  1. Spawn the Upwork MCP server as a subprocess
- *  2. List its tools and convert them to Anthropic tool format
- *  3. Run a multi-turn Claude loop with adaptive thinking
- *  4. Claude searches jobs, scores them, writes cover letters, submits proposals
+ *  2. List its tools and convert them to OpenAI/Groq tool format
+ *  3. Run a multi-turn agentic loop powered by Groq (free tier, Llama 3.3 70B)
+ *  4. The model searches jobs, scores them, writes cover letters, submits proposals
  *  5. Return a structured run summary
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { readFileSync, existsSync } from "fs";
@@ -23,8 +23,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 function loadEnv() {
   const envPath = join(__dirname, "..", ".env");
   if (!existsSync(envPath)) return;
-  const lines = readFileSync(envPath, "utf-8").split("\n");
-  for (const line of lines) {
+  for (const line of readFileSync(envPath, "utf-8").split("\n")) {
     const t = line.trim();
     if (!t || t.startsWith("#")) continue;
     const idx = t.indexOf("=");
@@ -40,13 +39,16 @@ function loadPreferences() {
   return JSON.parse(readFileSync(p, "utf-8"));
 }
 
-// ── MCP → Anthropic tool converter ────────────────────────────────────────────
+// ── MCP → OpenAI tool converter ────────────────────────────────────────────────
 
-function mcpToolsToAnthropic(mcpTools) {
+function mcpToolsToOpenAI(mcpTools) {
   return mcpTools.map((t) => ({
-    name: t.name,
-    description: t.description || "",
-    input_schema: t.inputSchema || { type: "object", properties: {} },
+    type: "function",
+    function: {
+      name: t.name,
+      description: t.description || "",
+      parameters: t.inputSchema || { type: "object", properties: {} },
+    },
   }));
 }
 
@@ -113,8 +115,8 @@ ${dryRun ? "\n⚠️  DRY RUN MODE ACTIVE — Do not call submit_proposal." : ""
 export async function runAgent({ dryRun = false, logger } = {}) {
   loadEnv();
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error("ANTHROPIC_API_KEY not set in .env");
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) throw new Error("GROQ_API_KEY not set in .env");
 
   const mcpPath = resolve(
     __dirname,
@@ -124,7 +126,12 @@ export async function runAgent({ dryRun = false, logger } = {}) {
   if (!existsSync(mcpPath)) throw new Error(`MCP server not found at: ${mcpPath}`);
 
   const prefs = loadPreferences();
-  const anthropic = new Anthropic({ apiKey });
+
+  // Groq via OpenAI-compatible API (free tier)
+  const groq = new OpenAI({
+    apiKey,
+    baseURL: "https://api.groq.com/openai/v1",
+  });
 
   logger?.log(`Starting agent run (dryRun=${dryRun})`);
   logger?.log(`Connecting to MCP server: ${mcpPath}`);
@@ -148,11 +155,12 @@ export async function runAgent({ dryRun = false, logger } = {}) {
     throw new Error(`Failed to list MCP tools: ${err.message}`);
   }
 
-  const anthropicTools = mcpToolsToAnthropic(mcpTools);
+  const openaiTools = mcpToolsToOpenAI(mcpTools);
   const systemPrompt = buildSystemPrompt(prefs, dryRun);
 
   // ── Agentic loop ──
   const messages = [
+    { role: "system", content: systemPrompt },
     {
       role: "user",
       content: `Run a full Upwork job search and apply cycle now. Today is ${new Date().toUTCString()}.`,
@@ -161,72 +169,75 @@ export async function runAgent({ dryRun = false, logger } = {}) {
 
   let runSummary = null;
   let iterations = 0;
-  const MAX_ITERATIONS = 30; // safety cap
+  const MAX_ITERATIONS = 30;
 
-  logger?.log("Starting Claude agentic loop...");
+  logger?.log("Starting Groq (Llama 3.3 70B) agentic loop...");
 
   while (iterations < MAX_ITERATIONS) {
     iterations++;
 
     let response;
     try {
-      // Stream for visibility, collect final message
-      const stream = anthropic.messages.stream({
-        model: "claude-opus-4-6",
+      response = await groq.chat.completions.create({
+        model: "llama-3.3-70b-versatile",
         max_tokens: 8192,
-        thinking: { type: "adaptive" },
-        system: systemPrompt,
-        tools: anthropicTools,
+        tools: openaiTools,
+        tool_choice: "auto",
         messages,
       });
-
-      // Log streamed text to console in real time
-      stream.on("text", (delta) => process.stdout.write(delta));
-
-      response = await stream.finalMessage();
     } catch (err) {
-      logger?.error(`Anthropic API error: ${err.message}`);
+      logger?.error(`Groq API error: ${err.message}`);
       throw err;
     }
 
+    const choice = response.choices[0];
+    const assistantMsg = choice.message;
+
+    // Print any text output
+    if (assistantMsg.content) {
+      process.stdout.write(assistantMsg.content + "\n");
+    }
+
     // Append assistant turn
-    messages.push({ role: "assistant", content: response.content });
+    messages.push(assistantMsg);
 
     // Extract summary from text if present
-    for (const block of response.content) {
-      if (block.type === "text") {
-        const match = block.text.match(/<summary>([\s\S]*?)<\/summary>/);
-        if (match) {
-          try {
-            runSummary = JSON.parse(match[1].trim());
-          } catch {
-            // not valid JSON yet, keep going
-          }
+    if (assistantMsg.content) {
+      const match = assistantMsg.content.match(/<summary>([\s\S]*?)<\/summary>/);
+      if (match) {
+        try {
+          runSummary = JSON.parse(match[1].trim());
+        } catch {
+          // not valid JSON yet, keep going
         }
       }
     }
 
-    // Done — no more tool calls
-    if (response.stop_reason === "end_turn") {
-      logger?.log("Agent completed (end_turn)");
+    // Done — no tool calls
+    if (choice.finish_reason === "stop") {
+      logger?.log("Agent completed (stop)");
       break;
     }
 
     // Handle tool calls
-    if (response.stop_reason === "tool_use") {
-      const toolUseBlocks = response.content.filter((b) => b.type === "tool_use");
+    if (choice.finish_reason === "tool_calls" && assistantMsg.tool_calls?.length) {
       const toolResults = [];
 
-      for (const block of toolUseBlocks) {
-        const toolName = block.name;
-        const toolInput = block.input;
+      for (const toolCall of assistantMsg.tool_calls) {
+        const toolName = toolCall.function.name;
+        let toolInput;
+        try {
+          toolInput = JSON.parse(toolCall.function.arguments);
+        } catch {
+          toolInput = {};
+        }
 
         // In dry run, intercept submit_proposal
         if (dryRun && toolName === "submit_proposal") {
           logger?.log(`[DRY RUN] Would submit proposal: ${JSON.stringify(toolInput)}`);
           toolResults.push({
-            type: "tool_result",
-            tool_use_id: block.id,
+            role: "tool",
+            tool_call_id: toolCall.id,
             content: JSON.stringify({
               dry_run: true,
               message: "DRY RUN: proposal NOT submitted",
@@ -247,26 +258,23 @@ export async function runAgent({ dryRun = false, logger } = {}) {
           logger?.error(`Tool ${toolName} failed: ${err.message}`);
         }
 
-        // Log meaningful events
         if (toolName === "submit_proposal") {
           logger?.log(`PROPOSAL SUBMITTED: job=${toolInput.job_id} bid=$${toolInput.bid_amount}`);
-          logger?.entry && logger.addProposal({
+          logger?.addProposal?.({
             job_id: toolInput.job_id,
             bid_amount: toolInput.bid_amount,
             submitted_at: new Date().toISOString(),
           });
         }
 
-        toolResults.push({ type: "tool_result", tool_use_id: block.id, content: result });
+        toolResults.push({
+          role: "tool",
+          tool_call_id: toolCall.id,
+          content: result,
+        });
       }
 
-      messages.push({ role: "user", content: toolResults });
-      continue;
-    }
-
-    // pause_turn: server loop hit limit, re-send to continue
-    if (response.stop_reason === "pause_turn") {
-      logger?.log("pause_turn received, continuing...");
+      messages.push(...toolResults);
       continue;
     }
 
@@ -282,7 +290,6 @@ export async function runAgent({ dryRun = false, logger } = {}) {
     await mcp.close();
   } catch {}
 
-  // Build final summary
   if (!runSummary) {
     runSummary = {
       jobs_found: 0,
